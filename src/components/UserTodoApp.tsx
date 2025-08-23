@@ -6,7 +6,8 @@ import { ThemeToggle } from './ThemeToggle';
 import { NotificationManager } from './NotificationManager';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
-import { Plus, ArrowLeft, Heart, Users } from 'lucide-react';
+import { Plus, ArrowLeft, Heart, Users, Wifi, WifiOff } from 'lucide-react';
+import { todoApi } from '../services/todoApi';
 
 export interface Todo {
   id: string;
@@ -38,53 +39,148 @@ export function UserTodoApp({ user, onBack }: UserTodoAppProps) {
   const [sort, setSort] = useState<SortType>('newest');
   const [isAddingTodo, setIsAddingTodo] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const isShared = user.type === 'shared';
 
-  // Load user-specific todos from localStorage on mount
+  // Monitor online status
   useEffect(() => {
-    const savedTodos = localStorage.getItem(`todos_${user.id}`);
-    if (savedTodos) {
-      const parsed = JSON.parse(savedTodos);
-      setTodos(parsed.map((todo: any) => ({
-        ...todo,
-        createdAt: new Date(todo.createdAt)
-      })));
-    }
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Load and sync todos on mount
+  useEffect(() => {
+    const loadTodos = async () => {
+      setIsSyncing(true);
+      try {
+        const syncedTodos = await todoApi.syncTodos(user.id);
+        setTodos(syncedTodos);
+      } catch (error) {
+        console.error('Failed to sync todos:', error);
+        // Fallback to localStorage
+        const savedTodos = localStorage.getItem(`todos_${user.id}`);
+        if (savedTodos) {
+          const parsed = JSON.parse(savedTodos);
+          setTodos(parsed.map((todo: any) => ({
+            ...todo,
+            createdAt: new Date(todo.createdAt)
+          })));
+        }
+      } finally {
+        setIsSyncing(false);
+      }
+    };
+
+    loadTodos();
   }, [user.id]);
 
-  // Save user-specific todos to localStorage whenever todos change
+  // Auto-save todos when they change (with debouncing)
   useEffect(() => {
-    localStorage.setItem(`todos_${user.id}`, JSON.stringify(todos));
+    if (todos.length === 0) return; // Don't save empty initial state
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        await todoApi.saveTodos(user.id, todos);
+      } catch (error) {
+        console.error('Failed to auto-save todos:', error);
+      }
+    }, 1000); // Debounce for 1 second
+
+    return () => clearTimeout(timeoutId);
   }, [todos, user.id]);
 
-  const addTodo = (text: string, priority: 'low' | 'medium' | 'high') => {
-    const newTodo: Todo = {
-      id: Date.now().toString(),
-      text,
-      completed: false,
-      priority,
-      createdAt: new Date()
-    };
-    setTodos(prev => [newTodo, ...prev]);
-    setIsAddingTodo(false);
+  const addTodo = async (text: string, priority: 'low' | 'medium' | 'high') => {
+    try {
+      if (isOnline) {
+        const newTodo = await todoApi.addTodo(user.id, text, priority);
+        setTodos(prev => [newTodo, ...prev]);
+      } else {
+        // Offline mode: create todo locally
+        const newTodo: Todo = {
+          id: `offline_${Date.now()}`,
+          text,
+          completed: false,
+          priority,
+          createdAt: new Date()
+        };
+        setTodos(prev => [newTodo, ...prev]);
+      }
+      setIsAddingTodo(false);
+    } catch (error) {
+      console.error('Failed to add todo:', error);
+      // Fallback to local creation
+      const newTodo: Todo = {
+        id: Date.now().toString(),
+        text,
+        completed: false,
+        priority,
+        createdAt: new Date()
+      };
+      setTodos(prev => [newTodo, ...prev]);
+      setIsAddingTodo(false);
+    }
   };
 
-  const updateTodo = (id: string, text: string, priority: 'low' | 'medium' | 'high') => {
-    setTodos(prev => prev.map(todo => 
-      todo.id === id ? { ...todo, text, priority } : todo
-    ));
-    setEditingId(null);
+  const updateTodo = async (id: string, text: string, priority: 'low' | 'medium' | 'high') => {
+    try {
+      if (isOnline) {
+        await todoApi.updateTodo(user.id, id, { text, priority });
+      }
+      setTodos(prev => prev.map(todo => 
+        todo.id === id ? { ...todo, text, priority } : todo
+      ));
+      setEditingId(null);
+    } catch (error) {
+      console.error('Failed to update todo:', error);
+      // Still update locally
+      setTodos(prev => prev.map(todo => 
+        todo.id === id ? { ...todo, text, priority } : todo
+      ));
+      setEditingId(null);
+    }
   };
 
-  const toggleTodo = (id: string) => {
-    setTodos(prev => prev.map(todo => 
-      todo.id === id ? { ...todo, completed: !todo.completed } : todo
-    ));
+  const toggleTodo = async (id: string) => {
+    const todo = todos.find(t => t.id === id);
+    if (!todo) return;
+
+    try {
+      if (isOnline) {
+        await todoApi.updateTodo(user.id, id, { completed: !todo.completed });
+      }
+      setTodos(prev => prev.map(todo => 
+        todo.id === id ? { ...todo, completed: !todo.completed } : todo
+      ));
+    } catch (error) {
+      console.error('Failed to toggle todo:', error);
+      // Still update locally
+      setTodos(prev => prev.map(todo => 
+        todo.id === id ? { ...todo, completed: !todo.completed } : todo
+      ));
+    }
   };
 
-  const deleteTodo = (id: string) => {
-    setTodos(prev => prev.filter(todo => todo.id !== id));
+  const deleteTodo = async (id: string) => {
+    try {
+      if (isOnline) {
+        await todoApi.deleteTodo(user.id, id);
+      }
+      setTodos(prev => prev.filter(todo => todo.id !== id));
+    } catch (error) {
+      console.error('Failed to delete todo:', error);
+      // Still delete locally
+      setTodos(prev => prev.filter(todo => todo.id !== id));
+    }
   };
 
   const filteredTodos = todos.filter(todo => {
@@ -171,6 +267,15 @@ export function UserTodoApp({ user, onBack }: UserTodoAppProps) {
             </div>
           </div>
           <div className="flex gap-2">
+            {/* Online/Offline Status */}
+            <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+              isOnline 
+                ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400' 
+                : 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400'
+            }`}>
+              {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+              {isSyncing ? 'Syncing...' : (isOnline ? 'Online' : 'Offline')}
+            </div>
             <NotificationManager 
               userId={user.id}
               userName={user.name}

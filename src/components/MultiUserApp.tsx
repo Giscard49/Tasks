@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { UserSelection } from './UserSelection';
 import { UserTodoApp } from './UserTodoApp';
+import { todoApi } from '../services/todoApi';
 
 interface User {
   id: string;
@@ -39,17 +40,26 @@ export function MultiUserApp() {
 
   const selectedUser = USERS.find(user => user.id === selectedUserId);
 
-  const getUserTaskCount = (userId: string) => {
-    const savedTodos = localStorage.getItem(`todos_${userId}`);
-    if (!savedTodos) {
-      return { total: 0, completed: 0 };
+  const getUserTaskCount = async (userId: string) => {
+    try {
+      const todos = await todoApi.getTodos(userId);
+      const total = todos.length;
+      const completed = todos.filter(todo => todo.completed).length;
+      return { total, completed };
+    } catch (error) {
+      console.error('Failed to get task count:', error);
+      // Fallback to localStorage
+      const savedTodos = localStorage.getItem(`todos_${userId}`);
+      if (!savedTodos) {
+        return { total: 0, completed: 0 };
+      }
+      
+      const todos = JSON.parse(savedTodos);
+      const total = todos.length;
+      const completed = todos.filter((todo: any) => todo.completed).length;
+      
+      return { total, completed };
     }
-    
-    const todos = JSON.parse(savedTodos);
-    const total = todos.length;
-    const completed = todos.filter((todo: any) => todo.completed).length;
-    
-    return { total, completed };
   };
 
   const handleSelectUser = (userId: string) => {
