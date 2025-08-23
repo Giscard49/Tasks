@@ -61,13 +61,13 @@ export function FamilyTaskDemo({ onAddTasks }: FamilyTaskDemoProps) {
           </p>
         </div>
 
-        <div className="text-xs text-muted-foreground space-y-1">
+        {/* <div className="text-xs text-muted-foreground space-y-1">
           <p>Examples: "{DEMO_FAMILY_TASKS[0]}"</p>
           <p>"{DEMO_FAMILY_TASKS[1]}"</p>
           <p>"{DEMO_FAMILY_TASKS[2]}"</p>
-        </div>
+        </div> */}
 
-        <Button 
+        {/* <Button 
           onClick={addDemoTasks}
           disabled={isAdding}
           variant="outline"
@@ -82,13 +82,13 @@ export function FamilyTaskDemo({ onAddTasks }: FamilyTaskDemoProps) {
           ) : (
             <>
               <Plus className="w-4 h-4" />
-              Add Demo Tasks
+              Add Tasks
             </>
           )}
-        </Button>
+        </Button> */}
 
         <div className="text-xs text-muted-foreground">
-          Perfect for family planning and bonding activities
+          Perfect for our planning and bonding activities
         </div>
       </div>
     </Card>
