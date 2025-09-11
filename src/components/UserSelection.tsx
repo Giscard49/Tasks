@@ -1,3 +1,4 @@
+import react from 'react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
@@ -6,6 +7,7 @@ import { NotificationManager } from './NotificationManager';
 import { NotificationDemo } from './NotificationDemo';
 import { FamilyTaskDemo } from './FamilyTaskDemo';
 import { Users, CheckSquare, Heart, LogOut } from 'lucide-react';
+
 
 interface User {
   id: string;
